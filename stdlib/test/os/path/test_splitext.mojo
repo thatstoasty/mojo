@@ -10,25 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: %mojo %s
 
-from .path import (
-    dirname,
-    exists,
-    expanduser,
-    expandvars,
-    getsize,
-    isdir,
-    isfile,
-    islink,
-    join,
-    split,
-    lexists,
-    isabs,
-    getatime,
-    getmtime,
-    getctime,
-    splitdrive,
-    splitroot,
-    splitext,
-    commonpath,
-)
+import os
+from os.path import splitext
+from testing import assert_equal
+
+
+def main():
+    head, extension = splitext("/usr/lib/file.txt")
+    assert_equal(head, "/usr/lib/file")
+    assert_equal(extension, ".txt")
+
+    head, extension = splitext("usr/lib/file.txt")
+    assert_equal(head, "usr/lib/file")
+    assert_equal(extension, ".txt")

@@ -307,6 +307,88 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 
 
 # ===----------------------------------------------------------------------=== #
+# getatime
+# ===----------------------------------------------------------------------=== #
+
+
+fn getatime[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
+    """Return the time of last access of a file.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to the file.
+
+    Returns:
+        The time of last access of a file.
+    """
+    return int(stat(path.__fspath__()).st_atimespec.as_nanoseconds() / 1e9)
+
+
+# ===----------------------------------------------------------------------=== #
+# getmtime
+# ===----------------------------------------------------------------------=== #
+
+
+fn getmtime[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
+    """Return the time of last modification of a file.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to the file.
+
+    Returns:
+        The time of last modification of a file.
+    """
+    return int(stat(path.__fspath__()).st_mtimespec.as_nanoseconds() / 1e9)
+
+
+# ===----------------------------------------------------------------------=== #
+# getctime
+# ===----------------------------------------------------------------------=== #
+
+
+fn getctime[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
+    """Return the metadata change time of last modification of a file.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to the file.
+
+    Returns:
+        The metadata change time of a file.
+    """
+    return int(stat(path.__fspath__()).st_ctimespec.as_nanoseconds() / 1e9)
+
+
+# ===----------------------------------------------------------------------=== #
+# isabs
+# ===----------------------------------------------------------------------=== #
+
+
+fn isabs[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+    """Return True if `path` is an absolute path name.
+    On Unix, that means it begins with a slash.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to check.
+
+    Returns:
+        Return `True` if path is an absolute path name.
+    """
+    constrained[not os_is_windows(), "Windows is not supported."]()
+    return path.__fspath__().startswith(sep)
+
+
+# ===----------------------------------------------------------------------=== #
 # join
 # ===----------------------------------------------------------------------=== #
 
@@ -391,6 +473,104 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
 #         paths_str.append(cur_path[].__fspath__())
 
 #     return join(path.__fspath__(), *paths_str)
+
+
+# ===----------------------------------------------------------------------=== #
+# splitdrive
+# ===----------------------------------------------------------------------=== #
+
+
+fn splitdrive[
+    PathLike: os.PathLike, //
+](path: PathLike) -> Tuple[String, String]:
+    """Split a pathname into drive and path. On POSIX, drive is always empty.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to be split.
+
+    Returns:
+        A tuple containing two strings: (drive, path).
+    """
+    constrained[not os_is_windows(), "Windows is not supported."]()
+    var p = path.__fspath__()
+    return p[:0], p
+
+
+# ===----------------------------------------------------------------------=== #
+# splitroot
+# ===----------------------------------------------------------------------=== #
+
+
+fn splitroot[
+    PathLike: os.PathLike, //
+](path: PathLike) -> Tuple[String, String, String]:
+    """Split a pathname into drive, root and tail. The tail contains anything after the root.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to be split.
+
+    Returns:
+        A tuple containing three strings: (drive, root, tail).
+    """
+    p = path.__fspath__()
+    alias empty = String("")
+    if p[:1] != sep:
+        # Relative path, e.g.: 'foo'
+        return empty, empty, p
+    elif p[1:2] != sep or p[2:3] == sep:
+        # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
+        return empty, String(sep), p[1:]
+    else:
+        # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
+        # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
+        return empty, p[:2], p[2:]
+
+
+# ===----------------------------------------------------------------------=== #
+# splitext
+# ===----------------------------------------------------------------------=== #
+
+
+fn _split_extension(
+    path: String, delim: String, alt_sep: String, extension_sep: String
+) -> Tuple[String, String]:
+    sepIndex = path.rfind(delim)
+    if alt_sep:
+        altsepIndex = path.rfind(alt_sep)
+        sepIndex = max(sepIndex, altsepIndex)
+
+    dotIndex = path.rfind(extension_sep)
+    if dotIndex > sepIndex:
+        # skip all leading dots
+        filenameIndex = sepIndex + 1
+        while filenameIndex < dotIndex:
+            if path.as_string_slice()[filenameIndex] != extension_sep:
+                return path[:dotIndex], path[dotIndex:]
+            filenameIndex += 1
+
+    return path, path[:0]
+
+
+fn splitext[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
+    """Split the pathname path into a pair (root, ext) such that root + ext == path.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to be split.
+
+    Returns:
+        A tuple containing two strings: (root, ext).
+    """
+    constrained[not os_is_windows(), "Windows is not supported."]()
+    return _split_extension(path.__fspath__(), sep, "", ".")
 
 
 # ===----------------------------------------------------------------------=== #
@@ -539,3 +719,73 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
 
     buf.write_bytes(bytes[i:])
     return buf
+
+
+# ===----------------------------------------------------------------------=== #
+# commonpath
+# ===----------------------------------------------------------------------=== #
+
+
+fn commonpath[*PathLike: os.PathLike](*paths: *PathLike) raises -> String:
+    """Given a sequence of path names, returns the longest common sub-path.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        paths: The paths to compare.
+
+    Returns:
+        The longest common sub-path.
+    """
+
+    alias curdir = "."
+    var split_paths = List[List[String]]()
+    var mismatch = 0
+
+    @parameter
+    fn print_with_separator[T: os.PathLike](value: T):
+        var path = value.__fspath__()
+        if path.startswith(sep):
+            mismatch += 1
+
+        try:
+            split_paths.append(path.split(sep))
+        except:
+            split_paths.append(path)
+
+    paths.each[print_with_separator]()
+
+    var is_abs = mismatch == len(split_paths)
+    var is_relative = mismatch == 0
+    if not is_relative and not is_abs:
+        raise Error("Can't mix absolute and relative paths")
+
+    var filtered_paths = List[List[String]]()
+    var shortest_idx = 0
+    var shortest_len = 0
+    var longest_idx = 0
+    var longest_len = 0
+
+    for i in range(len(split_paths)):
+        if len(split_paths[i]) < len(split_paths[shortest_idx]):
+            shortest_idx = i
+            shortest_len = len(split_paths[i])
+        elif len(split_paths[i]) > len(split_paths[longest_idx]):
+            longest_idx = i
+            longest_len = len(split_paths[i])
+
+        new_chunks = List[String]()
+        for chunk in split_paths[i]:
+            if chunk[] != "" and chunk[] != curdir:
+                new_chunks.append(chunk[])
+        filtered_paths.append(new_chunks)
+
+    var common = filtered_paths[shortest_idx]
+    for i in range(len(common)):
+        if common[i] != filtered_paths[longest_idx][i]:
+            common = common[:i]
+            break
+
+    var prefix = sep if is_abs else ""
+    return prefix + sep.join(common)
