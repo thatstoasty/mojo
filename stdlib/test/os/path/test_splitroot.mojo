@@ -17,11 +17,30 @@ from os.path import splitroot
 from testing import assert_equal
 
 
-def main():
-    head, extension = splitext("/usr/lib/file.txt")
-    assert_equal(head, "/usr/lib/file")
-    assert_equal(extension, ".txt")
+def test_absolute_path():
+    drive, root, tail = splitroot("/usr/lib/file.txt")
+    assert_equal(drive, "")
+    assert_equal(root, "/")
+    assert_equal(tail, "usr/lib/file.txt")
 
-    head, extension = splitext("usr/lib/file.txt")
-    assert_equal(head, "usr/lib/file")
-    assert_equal(extension, ".txt")
+    drive, root, tail = splitroot("//usr/lib/file.txt")
+    assert_equal(drive, "")
+    assert_equal(root, "")
+    assert_equal(tail, "//usr/lib/file.txt")
+
+    drive, root, tail = splitroot("///usr/lib/file.txt")
+    assert_equal(drive, "")
+    assert_equal(root, "/")
+    assert_equal(tail, "//usr/lib/file.txt")
+
+
+def test_relative_path():
+    drive, root, tail = splitroot("usr/lib/file.txt")
+    assert_equal(drive, "")
+    assert_equal(root, "")
+    assert_equal(tail, "usr/lib/file.txt")
+
+
+def main():
+    test_absolute_path()
+    test_relative_path()

@@ -518,7 +518,7 @@ fn splitroot[
     Returns:
         A tuple containing three strings: (drive, root, tail).
     """
-    p = path.__fspath__()
+    var p = path.__fspath__()
     alias empty = String("")
     if p[:1] != sep:
         # Relative path, e.g.: 'foo'
@@ -540,15 +540,15 @@ fn splitroot[
 fn _split_extension(
     path: String, delim: String, alt_sep: String, extension_sep: String
 ) -> Tuple[String, String]:
-    sepIndex = path.rfind(delim)
+    var sepIndex = path.rfind(delim)
     if alt_sep:
-        altsepIndex = path.rfind(alt_sep)
+        var altsepIndex = path.rfind(alt_sep)
         sepIndex = max(sepIndex, altsepIndex)
 
-    dotIndex = path.rfind(extension_sep)
+    var dotIndex = path.rfind(extension_sep)
     if dotIndex > sepIndex:
         # skip all leading dots
-        filenameIndex = sepIndex + 1
+        var filenameIndex = sepIndex + 1
         while filenameIndex < dotIndex:
             if path.as_string_slice()[filenameIndex] != extension_sep:
                 return path[:dotIndex], path[dotIndex:]
