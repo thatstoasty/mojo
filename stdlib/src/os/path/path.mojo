@@ -394,6 +394,51 @@ def split[PathLike: os.PathLike, //](path: PathLike) -> (String, String):
 
 
 # ===----------------------------------------------------------------------=== #
+# splitext
+# ===----------------------------------------------------------------------=== #
+
+
+# TODO: Move this to a generic path module when Windows is supported.
+# As it can be used for both Windows and Unix-like systems.
+fn _split_extension(
+    path: String, sep: String, alt_sep: String, extension_sep: String
+) -> Tuple[String, String]:
+    """Splits `path` into the root and extension."""
+    # Find the last extension separator after the last separator.
+    var sep_index = path.rfind(sep)
+    if alt_sep:
+        sep_index = max(sep_index, path.rfind(alt_sep))
+
+    var dot_index = path.rfind(extension_sep)
+    if dot_index > sep_index:
+        # skip all leading dots
+        var file_name_index = sep_index + 1
+        while file_name_index < dot_index:
+            if path.as_string_slice()[file_name_index] != extension_sep:
+                return path[:dot_index], path[dot_index:]
+            file_name_index += 1
+
+    return path, path[:0]
+
+
+fn splitext[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
+    """Splits `path` into the root and extension.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to be split.
+
+    Returns:
+        A tuple containing two strings: (root, extension).
+    """
+    if os_is_windows():
+        return _split_extension(path.__fspath__(), "\\", "/", ".")
+    return _split_extension(path.__fspath__(), sep, "", ".")
+
+
+# ===----------------------------------------------------------------------=== #
 # expandvars
 # ===----------------------------------------------------------------------=== #
 
