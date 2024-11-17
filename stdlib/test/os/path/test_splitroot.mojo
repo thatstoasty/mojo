@@ -25,8 +25,8 @@ def test_absolute_path():
 
     drive, root, tail = splitroot("//usr/lib/file.txt")
     assert_equal(drive, "")
-    assert_equal(root, "")
-    assert_equal(tail, "//usr/lib/file.txt")
+    assert_equal(root, "//")
+    assert_equal(tail, "usr/lib/file.txt")
 
     drive, root, tail = splitroot("///usr/lib/file.txt")
     assert_equal(drive, "")
@@ -40,7 +40,48 @@ def test_relative_path():
     assert_equal(root, "")
     assert_equal(tail, "usr/lib/file.txt")
 
+    drive, root, tail = splitroot(".")
+    assert_equal(drive, "")
+    assert_equal(root, "")
+    assert_equal(tail, ".")
+
+    drive, root, tail = splitroot("..")
+    assert_equal(drive, "")
+    assert_equal(root, "")
+    assert_equal(tail, "..")
+
+    drive, root, tail = splitroot("entire/.//.tail/..//captured////")
+    assert_equal(drive, "")
+    assert_equal(root, "")
+    assert_equal(tail, "entire/.//.tail/..//captured////")
+
+
+def test_root_directory():
+    drive, root, tail = splitroot("/")
+    assert_equal(drive, "")
+    assert_equal(root, "/")
+    assert_equal(tail, "")
+
+    drive, root, tail = splitroot("//")
+    assert_equal(drive, "")
+    assert_equal(root, "//")
+    assert_equal(tail, "")
+
+    drive, root, tail = splitroot("///")
+    assert_equal(drive, "")
+    assert_equal(root, "/")
+    assert_equal(tail, "//")
+
+
+def test_empty_path():
+    drive, root, tail = splitroot("")
+    assert_equal(drive, "")
+    assert_equal(root, "")
+    assert_equal(tail, "")
+
 
 def main():
     test_absolute_path()
     test_relative_path()
+    test_root_directory()
+    test_empty_path()

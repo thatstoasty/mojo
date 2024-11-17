@@ -520,15 +520,18 @@ fn splitroot[
     """
     var p = path.__fspath__()
     alias empty = String("")
+
+    # Relative path, e.g.: 'foo'
     if p[:1] != sep:
-        # Relative path, e.g.: 'foo'
         return empty, empty, p
+
+    # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
     elif p[1:2] != sep or p[2:3] == sep:
-        # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
         return empty, String(sep), p[1:]
+
+    # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
+    # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
-        # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
-        # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
         return empty, p[:2], p[2:]
 
 
@@ -540,19 +543,22 @@ fn splitroot[
 fn _split_extension(
     path: String, delim: String, alt_sep: String, extension_sep: String
 ) -> Tuple[String, String]:
-    var sepIndex = path.rfind(delim)
+    """Split the pathname path into a pair (root, ext) such that root + ext == path.
+    Platform agnostic.
+    """
+    var sep_index = path.rfind(delim)
     if alt_sep:
-        var altsepIndex = path.rfind(alt_sep)
-        sepIndex = max(sepIndex, altsepIndex)
+        var altsep_index = path.rfind(alt_sep)
+        sep_index = max(sep_index, altsep_index)
 
-    var dotIndex = path.rfind(extension_sep)
-    if dotIndex > sepIndex:
+    var dot_index = path.rfind(extension_sep)
+    if dot_index > sep_index:
         # skip all leading dots
-        var filenameIndex = sepIndex + 1
-        while filenameIndex < dotIndex:
-            if path.as_string_slice()[filenameIndex] != extension_sep:
-                return path[:dotIndex], path[dotIndex:]
-            filenameIndex += 1
+        var file_name_index = sep_index + 1
+        while file_name_index < dot_index:
+            if path.as_string_slice()[file_name_index] != extension_sep:
+                return path[:dot_index], path[dot_index:]
+            file_name_index += 1
 
     return path, path[:0]
 

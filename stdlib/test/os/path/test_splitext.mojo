@@ -17,11 +17,53 @@ from os.path import splitext
 from testing import assert_equal
 
 
-def main():
+def test_absolute_file_path():
     head, extension = splitext("/usr/lib/file.txt")
     assert_equal(head, "/usr/lib/file")
     assert_equal(extension, ".txt")
 
+    head, extension = splitext("//usr/lib/file.txt")
+    assert_equal(head, "//usr/lib/file")
+    assert_equal(extension, ".txt")
+
+    head, extension = splitext("///usr/lib/file.txt")
+    assert_equal(head, "///usr/lib/file")
+    assert_equal(extension, ".txt")
+
+
+def test_relative_file_path():
     head, extension = splitext("usr/lib/file.txt")
     assert_equal(head, "usr/lib/file")
     assert_equal(extension, ".txt")
+
+    head, extension = splitext("./file.txt")
+    assert_equal(head, "./file")
+    assert_equal(extension, ".txt")
+
+    head, extension = splitext(".././.././file.txt")
+    assert_equal(head, ".././.././file")
+    assert_equal(extension, ".txt")
+
+
+def test_relative_directories():
+    head, extension = splitext("")
+    assert_equal(head, "")
+    assert_equal(extension, "")
+
+    head, extension = splitext(".")
+    assert_equal(head, ".")
+    assert_equal(extension, "")
+
+    head, extension = splitext("..")
+    assert_equal(head, "..")
+    assert_equal(extension, "")
+
+    head, extension = splitext("usr/lib")
+    assert_equal(head, "usr/lib")
+    assert_equal(extension, "")
+
+
+def main():
+    test_absolute_file_path()
+    test_relative_file_path()
+    test_relative_directories()
