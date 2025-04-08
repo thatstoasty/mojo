@@ -10,22 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a set of operating-system independent functions for manipulating
-file system paths."""
+# RUN: %mojo %s
 
-from .path import (
-    basename,
-    dirname,
-    exists,
-    expanduser,
-    expandvars,
-    getsize,
-    isdir,
-    isfile,
-    islink,
-    isabs,
-    join,
-    lexists,
-    split,
-    splitroot,
-)
+import os
+from os.path import isabs
+from testing import assert_true, assert_false
+
+
+def main():
+    assert_false(isabs(""))
+    assert_true(isabs("/"))
+    assert_true(isabs("/foo"))
+    assert_true(isabs("/foo/bar"))
+    assert_false(isabs("foo/bar"))
+
+    assert_true(isabs("/usr/lib"))
+    assert_false(isabs("usr/lib"))
