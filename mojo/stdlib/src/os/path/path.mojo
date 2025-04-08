@@ -458,7 +458,7 @@ fn _split_extension(
                 return String(path[:file_end]), String(path[file_end:])
             file_start += 1
 
-    return String(path), String(path[:0])
+    return String(path), String("")
 
 
 fn splitext[
