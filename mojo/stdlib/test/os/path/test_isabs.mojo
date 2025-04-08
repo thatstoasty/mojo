@@ -18,11 +18,9 @@ from testing import assert_true, assert_false
 
 
 def main():
-    assert_false(isabs(""))
     assert_true(isabs("/"))
     assert_true(isabs("/foo"))
     assert_true(isabs("/foo/bar"))
-    assert_false(isabs("foo/bar"))
 
-    assert_true(isabs("/usr/lib"))
-    assert_false(isabs("usr/lib"))
+    assert_false(isabs(""))
+    assert_false(isabs("foo/bar"))
