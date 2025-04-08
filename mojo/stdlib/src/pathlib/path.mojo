@@ -18,8 +18,10 @@ from collections import List, InlineArray
 
 from hashlib._hasher import _HashableWithHasher, _Hasher
 from os import PathLike, listdir, stat_result
+from os.path import expandvars
 from sys import external_call, os_is_windows
 from sys.ffi import c_char
+from stat import S_ISSOCK, S_ISFIFO, S_ISCHR, S_ISBLK
 
 from builtin._location import __call_location, _SourceLocation
 from memory import UnsafePointer
@@ -110,7 +112,7 @@ struct Path(
         Returns:
             A copy of the value.
         """
-        return Self(self.path)
+        return self
 
     fn __truediv__(self, suffix: Self) -> Self:
         """Joins two paths using the system-defined path separator.
@@ -177,7 +179,7 @@ struct Path(
             writer: The object to write to.
         """
 
-        writer.write(self.path)
+        writer.write(self)
 
     @always_inline
     fn __fspath__(self) -> String:
@@ -186,7 +188,7 @@ struct Path(
         Returns:
           A string representation of the path.
         """
-        return String(self)
+        return self.path
 
     fn __repr__(self) -> String:
         """Returns a printable representation of the path.
@@ -194,7 +196,7 @@ struct Path(
         Returns:
           A printable representation of the path.
         """
-        return String(self)
+        return self.path
 
     fn __eq__(self, other: Self) -> Bool:
         """Returns True if the two paths are equal.
@@ -314,6 +316,17 @@ struct Path(
         """
         return os.path.isfile(self)
 
+    fn open(self, mode: StringSlice) raises -> FileHandle:
+        """Opens the file at the path provided.
+
+        Args:
+            mode: The mode to open the file with. For example: "r", "w", "a".
+
+        Returns:
+            The opened file.
+        """
+        return os.open(self, mode)
+
     fn read_text(self) raises -> String:
         """Returns content of the file.
 
@@ -323,26 +336,35 @@ struct Path(
         with open(self, "r") as f:
             return f.read()
 
-    fn read_bytes(self) raises -> List[UInt8]:
+    fn read_bytes(self) raises -> List[Byte]:
         """Returns content of the file as bytes.
 
         Returns:
-          Contents of file as list of bytes.
+            Contents of file as list of bytes.
         """
         with open(self, "r") as f:
             return f.read_bytes()
 
-    fn write_text[stringable: Stringable](self, value: stringable) raises:
+    fn write_text[T: Writable](self, value: T) raises:
         """Writes the value to the file as text.
 
         Parameters:
-          stringable: The Stringable type.
+            T: The type of an object conforming to the `Writable` trait.
 
         Args:
-          value: The value to write.
+            value: The value to write.
         """
         with open(self, "w") as f:
-            f.write(String(value))
+            f.write(value)
+
+    fn write_bytes(self, bytes: Span[Byte, _]) raises:
+        """Writes the value to the file as text.
+
+        Args:
+            bytes: The bytes to write to this file.
+        """
+        with open(self, "w") as f:
+            f.write_bytes(bytes)
 
     fn suffix(self) -> String:
         """The path's extension, if any.
@@ -397,3 +419,80 @@ struct Path(
             res.append(ls[i])
 
         return res
+
+    fn mkdir(
+        self, mode: Int = 511, parents: Bool = False, exist_ok: Bool = False
+    ) raises:
+        """Creates the directory at the path provided.
+
+        Args:
+            mode: The mode to create the directory with. Default is 511.
+            parents: If True, create parent directories as needed. Default is False.
+            exist_ok: If True, do not raise an error if the directory already
+                exists. Default is False.
+
+        Raises:
+            Error: If the directory could not be created.
+        """
+        if parents:
+            os.makedirs(self, mode, exist_ok)
+        else:
+            try:
+                os.mkdir(self, mode)
+            except e:
+                if not exist_ok:
+                    raise Error(
+                        e,
+                        "\nset `exist_ok=True` to allow existing dirs.",
+                    )
+                if not self.is_dir():
+                    raise Error("path not created: ", self, "\n", e)
+
+    fn rmdir(self) raises:
+        """Removes the directory at the path provided.
+
+        Raises:
+            Error: If the directory could not be removed.
+        """
+        os.rmdir(self)
+
+    fn is_block_device(self) raises -> Bool:
+        """Whether this path is a block device.
+
+        Returns:
+            Return True if the path points to a block device.
+        """
+        return S_ISBLK(self.stat().st_mode)
+
+    fn is_char_device(self) raises -> Bool:
+        """Whether this path is a character device.
+
+        Returns:
+            Return True if the path points to a character device.
+        """
+        return S_ISCHR(self.stat().st_mode)
+
+    fn is_fifo(self) raises -> Bool:
+        """Whether this path is a FIFO.
+
+        Returns:
+            Return True if the path points to a FIFO.
+        """
+        return S_ISFIFO(self.stat().st_mode)
+
+    fn is_socket(self) raises -> Bool:
+        """Whether this path is a socket.
+
+        Returns:
+            Return True if the path points to a socket.
+        """
+        return S_ISSOCK(self.stat().st_mode)
+
+    fn root(self) -> String:
+        """Returns the root of the path.
+
+        Returns:
+            The root of the path.
+        """
+        _, root, _ = os.path.splitroot(self)
+        return root^

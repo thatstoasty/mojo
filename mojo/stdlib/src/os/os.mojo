@@ -314,7 +314,7 @@ fn unlink[PathLike: os.PathLike](path: PathLike) raises:
       path: The path to the file.
 
     """
-    remove(path.__fspath__())
+    remove(path)
 
 
 # ===----------------------------------------------------------------------=== #
