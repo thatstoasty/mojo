@@ -314,17 +314,6 @@ struct Path(
         """
         return os.path.isfile(self)
 
-    fn open(self, mode: StringSlice) raises -> FileHandle:
-        """Opens the file at the path provided.
-
-        Args:
-            mode: The mode to open the file with. For example: "r", "w", "a".
-
-        Returns:
-            The opened file.
-        """
-        return os.open(self, mode)
-
     fn read_text(self) raises -> String:
         """Returns content of the file.
 
@@ -355,7 +344,7 @@ struct Path(
         with open(self, "w") as f:
             f.write(value)
 
-    fn write_bytes(self, bytes: Span[Byte, _]) raises:
+    fn write_bytes(self, bytes: Span[Byte]) raises:
         """Writes bytes to the file.
 
         Args:
