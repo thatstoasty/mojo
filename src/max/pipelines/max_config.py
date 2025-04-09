@@ -18,9 +18,7 @@ import glob
 import json
 import logging
 import os
-import random
 import struct
-import time
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -30,7 +28,7 @@ from typing import Optional, Union, cast
 import huggingface_hub
 import torch
 from huggingface_hub import constants as hf_hub_constants
-from huggingface_hub import errors as hf_hub_errors
+from huggingface_hub import try_to_load_from_cache
 from max.driver import DeviceSpec, devices_exist, scan_available_devices
 from max.dtype import DType
 from max.engine import GPUProfilingMode
@@ -41,8 +39,8 @@ from max.pipelines.config_enums import (
     RepoType,
     SupportedEncoding,
 )
+from max.pipelines.hf_utils import repo_exists_with_retry
 from max.pipelines.kv_cache import KVCacheStrategy
-from requests.exceptions import ConnectionError as RequestsConnectionError
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -301,21 +299,64 @@ class MAXModelConfig(MAXModelConfigBase):
         return self.quantization_encoding.quantization_encoding
 
     def weights_size(self) -> int:
-        size = 0
+        """Calculates the total size in bytes of all weight files specified in
+        `weight_path`.
+
+        This method attempts to find the weights locally first to avoid network
+        calls, checking in the following order:
+
+        1. If `repo_type` is :obj:`RepoType.local`, it checks if the path
+           in `weight_path` exists directly as a local file path.
+        2. Otherwise, if `repo_type` is :obj:`RepoType.online`, it first checks the local
+           Hugging Face cache using :obj:`huggingface_hub.try_to_load_from_cache()`.
+           If not found in the cache, it falls back to querying the Hugging Face
+           Hub API via :obj:`HuggingFaceRepo.size_of()`.
+
+        Returns:
+            The total size of all weight files in bytes.
+
+        Raises:
+            FileNotFoundError: If `repo_type` is :obj:`RepoType.local` and a file
+                specified in `weight_path` is not found within the local repo
+                directory.
+            ValueError: If :obj:`HuggingFaceRepo.size_of()` fails to retrieve the
+                file size from the Hugging Face Hub API (e.g., file metadata
+                not available or API error).
+            RuntimeError: If the determined `repo_type` is unexpected.
+        """
+        total_weights_size = 0
+        repo = self.huggingface_weights_repo
+
         for file_path in self.weight_path:
-            if os.path.exists(file_path):
-                size += os.path.getsize(file_path)
+            file_path_str = str(file_path)
+
+            # 1. Check if the file exists locally (direct path, local repo, or cache)
+            if local_file_location := self._local_weight_path(file_path):
+                total_weights_size += os.path.getsize(local_file_location)
                 continue
 
-            next_size = self.huggingface_weights_repo.size_of(str(file_path))
-
-            if next_size is None:
-                raise ValueError(
-                    f"Failed to get size of weight file {file_path}"
+            # 2. File not found locally or non-existence is cached.
+            if repo.repo_type == RepoType.local:
+                raise FileNotFoundError(
+                    f"Weight file '{file_path_str}' not found within the local repository path '{repo.repo_id}'"
                 )
-            size += next_size
+            # If it was an online repo, we need to check the API.
+            elif repo.repo_type == RepoType.online:
+                # 3. Fallback: File not local/cached, get size via API for online repos.
+                next_size = repo.size_of(file_path_str)
+                if next_size is None:
+                    # size_of failed (e.g., API error, or file exists in index but metadata failed)
+                    raise ValueError(
+                        f"Failed to get size of weight file {file_path_str} from repository {repo.repo_id}"
+                    )
+                total_weights_size += next_size
+            else:
+                # This case should ideally not be reached due to repo_type validation.
+                raise RuntimeError(
+                    f"Unexpected repository type: {repo.repo_type}"
+                )
 
-        return size
+        return total_weights_size
 
     @cached_property
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
@@ -561,17 +602,33 @@ class MAXModelConfig(MAXModelConfigBase):
         # Assume at this point, an architecture,
         # a model_path and weight_paths are available.
         assert self.weight_path, "weight_path must be provided."
+        repo = self.huggingface_weights_repo
         for path in self.weight_path:
-            # Check if file exists locally.
-            if not os.path.exists(path):
-                # If does not exist locally, verify that it exists on Huggingface.
-                if not self.huggingface_weights_repo.file_exists(str(path)):
+            path_str = str(path)
+            # Check if file exists locally (direct, local repo, or cache).
+            if self._local_weight_path(path):
+                # Found locally: nothing to do.
+                continue
+
+            # File not found locally.
+            if repo.repo_type == RepoType.local:
+                # Helper returning None for local repo means not found.
+                raise FileNotFoundError(
+                    f"weight file '{path_str}' not found within the local repository path '{repo.repo_id}'"
+                )
+            elif repo.repo_type == RepoType.online:
+                # Verify that it exists on Huggingface.
+                if not repo.file_exists(path_str):
                     msg = (
-                        f"weight_path: '{path}' does not exist locally, and"
-                        f" '{self.model_path}/{path}' does"
+                        f"weight_path: '{path_str}' does not exist locally or in cache,"  # noqa: E501
+                        f" and '{repo.repo_id}/{path_str}' does"
                         " not exist on HuggingFace."
                     )
                     raise ValueError(msg)
+            else:
+                raise RuntimeError(
+                    f"unexpected repository type: {repo.repo_type}"
+                )
 
     def _finalize_encoding_config(self):
         """
@@ -600,6 +657,62 @@ class MAXModelConfig(MAXModelConfigBase):
                 desc_act=hf_quant_config["desc_act"],
                 sym=hf_quant_config["sym"],
             )
+
+    def _local_weight_path(self, relative_path: Path) -> str | None:
+        """Checks common local locations for a weight file and returns its
+        absolute path if found.
+
+        Checks locations based on the repository type:
+        - If `RepoType.local`, try directly using `relative_path` (absolute or
+          CWD-relative).
+        - If `RepoType.online`, checks the Hugging Face cache via
+          `try_to_load_from_cache()`.
+
+        Args:
+            relative_path: The Path object representing the weight file,
+                potentially relative to a repo root or cache.
+
+        Returns:
+            The absolute path (as a string) to the local file if found, otherwise None.
+        """
+        repo = self.huggingface_weights_repo
+
+        # Check direct path first (absolute or relative to CWD).
+        # NOTE(bduke): do this even for online repositories, because upstream
+        # code originating from `huggingface_hub.hf_hub_download` returns
+        # absolute paths for cached files.
+        if relative_path.exists() and relative_path.is_file():
+            return str(relative_path.resolve())
+
+        # 1. Handle local repository paths.
+        if repo.repo_type == RepoType.local:
+            # Not found locally.
+            return None
+
+        # 2. Handle online repositories: try cache only.
+        elif repo.repo_type == RepoType.online:
+            # `try_to_load_from_cache` checks the HF cache.
+            # Returns absolute path string if found in cache, otherwise None.
+            cached_result = try_to_load_from_cache(
+                repo_id=repo.repo_id,
+                filename=str(relative_path),
+                revision=repo.revision,
+            )
+            if cached_result and not isinstance(
+                cached_result, (str, os.PathLike)
+            ):
+                # Handle cached non-existent result, which is a special sentinel value.
+                raise FileNotFoundError(
+                    f"cached non-existent weight file at {relative_path} on Hugging Face"
+                )
+
+            return str(cached_result) if cached_result else None
+        # 3. Handle unexpected repo type.
+        else:
+            logger.warning(
+                f"Unexpected repository type encountered: {repo.repo_type}"
+            )
+            return None
 
     @staticmethod
     def help() -> dict[str, str]:
@@ -672,56 +785,6 @@ class ProfilingConfig(MAXConfig):
         return {
             "gpu_profiling": "Whether to turn on GPU profiling for the model. This defaults to 'off'.",
         }
-
-
-def repo_exists_with_retry(repo_id: str) -> bool:
-    """
-    Wrapper around huggingface_hub.repo_exists with retry logic.
-    Uses exponential backoff with 25% jitter, starting at 1s and doubling each retry.
-
-    See huggingface_hub.repo_exists for details
-    """
-    max_attempts = 5
-    base_delays = [2**i for i in range(max_attempts)]
-    retry_delays_in_seconds = [
-        d * (1 + random.uniform(-0.25, 0.25)) for d in base_delays
-    ]
-
-    for attempt, delay_in_seconds in enumerate(retry_delays_in_seconds):
-        try:
-            return huggingface_hub.repo_exists(repo_id)
-        except (
-            hf_hub_errors.RepositoryNotFoundError,
-            hf_hub_errors.GatedRepoError,
-            hf_hub_errors.RevisionNotFoundError,
-            hf_hub_errors.EntryNotFoundError,
-        ) as e:
-            # Forward these specific errors to the user
-            logger.error(f"Hugging Face repository error: {str(e)}")
-            raise
-        except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
-            # Do not retry if Too Many Requests error received
-            if e.response.status_code == 429:
-                logger.error(e)
-                raise
-
-            if attempt == max_attempts - 1:
-                logger.error(
-                    f"Failed to connect to Hugging Face Hub after {max_attempts} attempts: {str(e)}"
-                )
-                raise
-
-            logger.warning(
-                f"Transient Hugging Face Hub connection error (attempt {attempt + 1}/{max_attempts}): {str(e)}"
-            )
-            logger.warning(
-                f"Retrying Hugging Face connection in {delay_in_seconds} seconds..."
-            )
-            time.sleep(delay_in_seconds)
-
-    assert False, (
-        "This should never be reached due to the raise in the last attempt"
-    )
 
 
 @dataclass(frozen=True)
@@ -906,7 +969,9 @@ class HuggingFaceRepo:
         # Get torch dtype for pytorch files.
         if WeightsFormat.pytorch in self.formats_available:
             cfg = AutoConfig.from_pretrained(
-                self.repo_id, trust_remote_code=self.trust_remote_code
+                self.repo_id,
+                trust_remote_code=self.trust_remote_code,
+                revision=self.revision,
             )
 
             if torch_dtype := getattr(cfg, "torch_dtype", None):

@@ -36,8 +36,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import TextContext
-from max.pipelines.interfaces import LogProbabilities
+from max.pipelines.core import LogProbabilities, TextContext
 from max.pipelines.kv_cache import (
     KVCacheInputs,
     KVCacheManager,
@@ -69,11 +68,13 @@ class ReplitInputs(ModelInputs):
         self,
         tokens: Tensor,
         input_row_offsets: Tensor,
+        return_n_logits: Tensor,
         kv_cache_inputs: KVCacheInputs | None = None,
     ) -> None:
         self.tokens = tokens
         self.input_row_offsets = input_row_offsets
         self.kv_cache_inputs = kv_cache_inputs
+        self.return_n_logits = return_n_logits
 
 
 class ReplitModel(PipelineModel[TextContext]):
@@ -118,6 +119,7 @@ class ReplitModel(PipelineModel[TextContext]):
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets,
+            model_inputs.return_n_logits,
             *model_inputs.kv_cache_inputs,
             copy_inputs_to_device=False,
         )
@@ -137,6 +139,7 @@ class ReplitModel(PipelineModel[TextContext]):
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> ReplitInputs:
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
@@ -158,6 +161,9 @@ class ReplitModel(PipelineModel[TextContext]):
                 self.devices[0]
             ),
             kv_cache_inputs=kv_cache_inputs,
+            return_n_logits=Tensor.from_numpy(
+                np.array([return_n_logits], dtype=np.int64)
+            ).to(self.devices[0]),
         )
 
     def prepare_next_token_inputs(
@@ -172,6 +178,7 @@ class ReplitModel(PipelineModel[TextContext]):
             tokens=next_tokens,
             input_row_offsets=next_row_offsets,
             kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
+            return_n_logits=prev_model_inputs.return_n_logits,
         )
 
     @classmethod
@@ -324,22 +331,29 @@ class ReplitModel(PipelineModel[TextContext]):
         input_row_offsets_type = TensorType(
             DType.uint32, shape=["input_row_offsets_len"]
         )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"]
+        )
         kv_cache_types = self.kv_manager.input_symbols()[0]
         with Graph(
             "replit",
             input_types=[
                 tokens_type,
                 input_row_offsets_type,
+                return_n_logits_type,
                 *kv_cache_types,
             ],
         ) as graph:
-            tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
+            tokens, input_row_offsets, return_n_logits, *kv_cache_inputs = (
+                graph.inputs
+            )
             # This is just needed for type checking.
             kv_cache_tensors = [v.tensor for v in kv_cache_inputs]
             outputs = nn_model(
                 tokens=tokens.tensor,
                 input_row_offsets=input_row_offsets,
                 kv_cache_inputs=kv_cache_tensors,
+                return_n_logits=return_n_logits.tensor,
             )
             graph.output(*outputs)
 

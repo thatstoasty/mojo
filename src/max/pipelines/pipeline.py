@@ -25,7 +25,6 @@ from typing import (
     Optional,
     Protocol,
     TypeVar,
-    cast,
     runtime_checkable,
 )
 
@@ -52,15 +51,15 @@ if TYPE_CHECKING:
     from .config import PipelineConfig
 
 from .config_enums import SupportedEncoding
-from .context import InputContext
-from .hf_utils import download_weight_files
-from .interfaces import (
+from .core import (
+    InputContext,
     LogProbabilities,
     TextGenerationResponse,
     TextGenerationStatus,
     TextResponse,
     TokenGenerator,
 )
+from .hf_utils import download_weight_files
 from .kv_cache import KVCacheManager, KVCacheParams
 from .max_config import KVCacheConfig
 from .sampling import token_sampler
@@ -79,13 +78,6 @@ except ImportError:
     pass
 
 logger = logging.getLogger("max.pipelines")
-
-ARCH_SAFE_VRAM_USAGE_LIMIT = {
-    "DeepseekCoder": 0.96,
-    "ExaoneForCausalLM": 0.96,
-    "LlamaForCausalLM": 0.96,
-    "MistralForCausalLM": 0.96,
-}
 
 
 def upper_bounded_default(upper_bound: int, default: int | None) -> int:
@@ -336,6 +328,7 @@ class PipelineModel(ABC, Generic[T]):
         self,
         context_batch: Sequence[T],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> ModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
 
@@ -645,7 +638,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # `fetch` may shorten the input context by bumping the start_idx.
         tracer.next("fetch_kv_cache")
         kv_cache_inputs = self._pipeline_model.kv_manager.fetch(
-            cast(list[InputContext], batch), num_steps
+            batch, num_steps
         )
 
         return (
@@ -857,9 +850,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.
         tracer.next("kv_manager.step")  # pops prepare_response
-        self._pipeline_model.kv_manager.step(
-            cast(list[InputContext], context_batch)
-        )
+        self._pipeline_model.kv_manager.step(context_batch)
         tracer.pop()  # pops kv_manager.step
 
         return res
