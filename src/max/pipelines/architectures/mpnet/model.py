@@ -36,7 +36,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import TextContext
+from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams
 from transformers import AutoConfig
@@ -150,6 +150,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         self,
         context_batch: Sequence[TextContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> MPNetInputs:
         # Get tokens and seq_ids.
         tokens = [ctx.next_tokens for ctx in context_batch]

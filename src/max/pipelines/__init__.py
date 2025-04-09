@@ -16,11 +16,7 @@
 from typing import Callable as _Callable
 from typing import Union as _Union
 
-from .config import PipelineConfig
-from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
-from .embeddings_pipeline import EmbeddingsPipeline
-from .hf_utils import HuggingFaceFile, download_weight_files
-from .interfaces import (
+from max.pipelines.core import (
     EmbeddingsGenerator,
     EmbeddingsResponse,
     LogProbabilities,
@@ -34,6 +30,15 @@ from .interfaces import (
     TokenGeneratorRequestMessage,
     TokenGeneratorRequestTool,
     TokenGeneratorResponseFormat,
+)
+
+from .config import PipelineConfig
+from .config_enums import PipelineEngine, RepoType, RopeType, SupportedEncoding
+from .embeddings_pipeline import EmbeddingsPipeline
+from .hf_utils import (
+    HuggingFaceFile,
+    download_weight_files,
+    repo_exists_with_retry,
 )
 from .log_probabilities import compute_log_probabilities
 from .max_config import (
@@ -101,4 +106,5 @@ __all__ = [
     "compute_log_probabilities",
     "upper_bounded_default",
     "download_weight_files",
+    "repo_exists_with_retry",
 ]

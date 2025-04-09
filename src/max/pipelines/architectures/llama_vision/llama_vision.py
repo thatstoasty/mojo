@@ -37,7 +37,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import InputContext, TextAndVisionContext
+from max.pipelines.core import InputContext, TextAndVisionContext
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
     KVCacheInputs,
@@ -926,6 +926,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
         if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:

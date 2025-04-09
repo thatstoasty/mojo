@@ -11,10 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .context import InputContext, TextAndVisionContext, TextContext
+"""Llama4 normalization."""
 
-__all__ = [
-    "InputContext",
-    "TextAndVisionContext",
-    "TextContext",
-]
+from __future__ import annotations
+
+from max.dtype import DType
+from max.graph import TensorType, TensorValue, ops
+
+
+def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
+    weight = ops.constant(1, DType.float32).broadcast_to([x.shape[0]])
+    if x.device:
+        weight = weight.to(x.device)
+    return ops.custom(
+        "rms_norm",
+        [x, weight, ops.constant(eps, x.dtype)],
+        [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+    )[0].tensor

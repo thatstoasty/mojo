@@ -1728,15 +1728,28 @@ struct SIMD[dtype: DType, size: Int](
         @parameter
         if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
             constrained[
-                target in (DType.float32, DType.float16, DType.bfloat16),
+                target
+                in (
+                    DType.float64,
+                    DType.float32,
+                    DType.float16,
+                    DType.bfloat16,
+                ),
                 (
-                    "Only FP8->F32, FP8->F16, and FP8->BF16 castings are"
-                    " implemented."
+                    String(
+                        (
+                            "Only FP8->F64, FP8->F32, FP8->F16, and FP8->BF16"
+                            " castings are implemented. "
+                        ),
+                        dtype,
+                        "->",
+                        target,
+                    )
                 ),
             ]()
 
             @parameter
-            if target is DType.float32:
+            if target in (DType.float32, DType.float64):
                 return _convert_float8_to_f32(
                     rebind[SIMD[dtype, size]](self)
                 ).cast[target]()
@@ -3160,34 +3173,9 @@ fn _convert_float8_to_f16[
 ](val: SIMD[dtype, size],) -> SIMD[DType.float16, size]:
     @parameter
     if _is_sm_9x_or_newer():
-        alias asm_prefix = "cvt.rn.f16x2.e4m3x2" if dtype is DType.float8_e4m3fn else "cvt.rn.f16x2.e5m2x2"
-        var val_uint8 = bitcast[DType.uint8](val)
-
-        @parameter
-        if size > 1:
-            var res = SIMD[DType.uint16, size]()
-
-            @parameter
-            for i in range(0, size, 2):
-                var f8x2 = val_uint8.slice[2, offset=i]()
-                var f16x2_f8x2 = inlined_assembly[
-                    asm_prefix + " $0, $1;",
-                    Scalar[DType.uint32],
-                    constraints="=r,h",
-                    has_side_effect=False,
-                ](bitcast[DType.uint16, 1](f8x2))
-                var ui16x2 = bitcast[DType.uint16, 2](f16x2_f8x2)
-                res = res.insert[offset=i](ui16x2)
-            return bitcast[DType.float16](res)
-        else:
-            var f16x2_f8x2 = inlined_assembly[
-                asm_prefix + " $0, $1;",
-                Scalar[DType.uint32],
-                constraints="=r,h",
-                has_side_effect=False,
-            ](val_uint8.cast[DType.uint16]())
-            var ui16x2 = bitcast[DType.uint16, 2](f16x2_f8x2)
-            return bitcast[DType.float16](ui16x2[0])
+        return __mlir_op.`pop.cast`[
+            _type = SIMD[DType.float16, size]._mlir_type
+        ](val.value)
     else:
         return _convert_float8_to_f32(rebind[SIMD[dtype, size]](val)).cast[
             DType.float16
