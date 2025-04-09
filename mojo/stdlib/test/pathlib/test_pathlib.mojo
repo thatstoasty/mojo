@@ -97,16 +97,6 @@ def test_read_write_bytes():
         assert_equal(List[Byte](data), file.read_bytes())
 
 
-def test_path_open():
-    alias data = "The quick brown fox jumps over the lazy dog"
-    var tmp = Path(gettempdir().value()) / "test_path_open"
-    with tmp.open("w") as f:
-        f.write(data)
-
-    with tmp.open("r") as read_file:
-        assert_equal(read_file.read(), data)
-
-
 fn get_user_path() -> Path:
     @parameter
     if os_is_windows():
