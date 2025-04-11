@@ -26,7 +26,21 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import Linear
+from max.nn import Linear, ReturnLogits
+from max.nn.kv_cache import (
+    ContinuousBatchingKVCacheManager,
+    KVCacheInputs,
+    KVCacheInputSymbols,
+    KVCacheManager,
+    KVCacheParams,
+    KVCacheStrategy,
+    PaddedKVCacheInputs,
+    RaggedKVCacheInputs,
+    build_max_lengths_tensor,
+    estimate_kv_cache_size,
+    infer_optimal_batch_size,
+    load_kv_manager,
+)
 from max.nn.layer import Layer
 from max.pipelines import (
     KVCacheConfig,
@@ -37,21 +51,7 @@ from max.pipelines import (
     SupportedEncoding,
     upper_bounded_default,
 )
-from max.pipelines.context import InputContext, TextAndVisionContext
-from max.pipelines.kv_cache import (
-    ContinuousBatchingKVCacheManager,
-    KVCacheInputs,
-    KVCacheInputSymbols,
-    KVCacheManager,
-    KVCacheParams,
-    KVCacheStrategy,
-    PaddedKVCacheInputs,
-    RaggedKVCacheInputs,
-    estimate_kv_cache_size,
-    infer_optimal_batch_size,
-    load_kv_manager,
-)
-from max.pipelines.kv_cache._utils import build_max_lengths_tensor
+from max.pipelines.core import InputContext, TextAndVisionContext
 from transformers import AutoConfig
 
 from .language_model import CausalLanguageModel, instantiate_language_model
@@ -59,6 +59,9 @@ from .model_config import LlamaVisionConfig
 from .vision_model import instantiate_vision_model
 
 logger = logging.getLogger("max.pipelines")
+
+# TODO(GEX-2071): Re-enable when parallel compilation works.
+_DO_PARALLEL_COMPILATION = False
 
 
 @dataclass
@@ -685,7 +688,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         # Set convenience attributes for the text and vision configs.
         self.vision_config = huggingface_config.vision_config
@@ -704,7 +707,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.vision_model, self.language_model = self.load_model(session)
         # Note that in a multimodal model, the language model is the last model in the
@@ -926,6 +929,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         self,
         context_batch: Sequence[TextAndVisionContext],
         kv_cache_inputs: KVCacheInputs | None = None,
+        return_n_logits: int = 1,
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
         if self.kv_cache_config.cache_strategy != KVCacheStrategy.CONTINUOUS:
@@ -1264,10 +1268,14 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             )
             return language_model
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            vision_model_future = executor.submit(build_vision_model)
-            language_model_future = executor.submit(build_language_model)
-            vision_model = vision_model_future.result()
-            language_model = language_model_future.result()
+        if _DO_PARALLEL_COMPILATION:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                vision_model_future = executor.submit(build_vision_model)
+                language_model_future = executor.submit(build_language_model)
+                vision_model = vision_model_future.result()
+                language_model = language_model_future.result()
+        else:
+            vision_model = build_vision_model()
+            language_model = build_language_model()
 
         return (vision_model, language_model)

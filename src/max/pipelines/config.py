@@ -17,25 +17,26 @@ from __future__ import annotations
 
 import logging
 import os
+from copy import deepcopy
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Optional, get_type_hints
 
 from max.driver import DeviceSpec, load_devices
 from max.graph.quantization import QuantizationEncoding
-from max.pipelines.config_enums import (
+from max.pipelines.memory_estimation import MEMORY_ESTIMATOR
+from max.pipelines.registry import PIPELINE_REGISTRY
+
+from .config_enums import (
     PipelineEngine,
     RopeType,
 )
-from max.pipelines.max_config import (
+from .max_config import (
     KVCacheConfig,
     MAXConfig,
-    MAXModelConfig,
     ProfilingConfig,
     SamplingConfig,
-    repo_exists_with_retry,
 )
-from max.pipelines.registry import PIPELINE_REGISTRY
-from transformers import AutoTokenizer
+from .model_config import MAXModelConfig
 
 logger = logging.getLogger("max.pipelines")
 
@@ -103,6 +104,8 @@ class PipelineConfig(MAXConfig):
         "USE_EXPERIMENTAL_KERNELS", "false"
     )
 
+    # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
+    # to MAXModelConfig.
     draft_model: Optional[str] = None
     """Draft model for use during Speculative Decoding."""
 
@@ -111,6 +114,9 @@ class PipelineConfig(MAXConfig):
 
     _model_config: MAXModelConfig = field(default_factory=MAXModelConfig)
     """The model config."""
+
+    _draft_model_config: Optional[MAXModelConfig] = None
+    """The draft model config."""
 
     _sampling_config: SamplingConfig = field(default_factory=SamplingConfig)
     """The sampling config."""
@@ -200,7 +206,6 @@ class PipelineConfig(MAXConfig):
         config fields have been initialized to a valid state.
         """
         self.model_config.resolve()
-
         # Validate if a provided max_length is non-negative.
         if self.max_length is not None and self.max_length < 0:
             raise ValueError("max_length must be non-negative.")
@@ -240,13 +245,33 @@ class PipelineConfig(MAXConfig):
         Validate the pipeline configs when used in speculative decoding mode.
         """
         if self.draft_model is None:
+            # NOTE: Do not use this directly after instantiating PipelineConfig. We
+            # only keep this here to support backward compatibility of the draft_model
+            # field entrypoint. This will be removed entirely soon. I purposefully
+            # set this to an empty string than None, to ensure that we catch any
+            # inadvertent use of draft_model.
+            self.draft_model = ""
             return
 
-        if not repo_exists_with_retry(self.draft_model):
-            raise ValueError(
-                "draft_model provided does not exist on HuggingFace."
-                "Only public HuggingFace draft models currently supported."
-            )
+        # TODO(E2EOPT-108): Clean this up once we have fully migrated draft model
+        # to MAXModelConfig. For now, we copy all of the model_config fields
+        # except the model_path / repo_id to the draft_model_config.
+        self._draft_model_config = deepcopy(self._model_config)
+        self._draft_model_config.model_path = self.draft_model
+        self._draft_model_config._huggingface_config = (
+            self._draft_model_config.huggingface_config
+        )
+
+        # TODO(E2EOPT-108): Remove this once we have fully migrated draft model
+        # to MAXModelConfig.
+        # NOTE: Do not use this directly after instantiating PipelineConfig. We
+        # only keep this here to support backward compatibility of the draft_model
+        # field entrypoint. This will be removed entirely soon. I purposefully
+        # set this to an empty string than None, to ensure that we catch any
+        # inadvertent use of draft_model.
+        self.draft_model = ""
+
+        assert self.draft_model_config is not None  # keep mypy happy
 
         # Assume `draft_model` is provided, and thus speculative decoding is enabled.
         # We don't support running speculative decoding with the HuggingFace backend.
@@ -259,8 +284,7 @@ class PipelineConfig(MAXConfig):
         # Validate that both the `draft_model` and target model `model_path` have the same
         # architecture
         draft_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            self.draft_model,
-            trust_remote_code=self.model_config.trust_remote_code,
+            huggingface_repo=self.draft_model_config.huggingface_model_repo,
         )
 
         if not draft_arch:
@@ -268,8 +292,7 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         target_arch = PIPELINE_REGISTRY.retrieve_architecture(
-            self.model_config.model_path,
-            trust_remote_code=self.model_config.trust_remote_code,
+            huggingface_repo=self.model_config.huggingface_model_repo,
         )
         if not target_arch:
             msg = "MAX-Optimized architecture not found for target model (`model_path`)"
@@ -280,30 +303,28 @@ class PipelineConfig(MAXConfig):
             raise ValueError(msg)
 
         # Validate that their tokenizers are identical.
-        draft_tokenizer = AutoTokenizer.from_pretrained(
-            self.draft_model,
-            trust_remote_code=self.model_config.trust_remote_code,
+        draft_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+            huggingface_repo=self.draft_model_config.huggingface_model_repo
         )
-        target_tokenizer = AutoTokenizer.from_pretrained(
-            self.model_config.model_path,
-            trust_remote_code=self.model_config.trust_remote_code,
+        target_tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
+            huggingface_repo=self.model_config.huggingface_model_repo
         )
 
         # Compare Vocabularies
         if draft_tokenizer.get_vocab() != target_tokenizer.get_vocab():
-            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
+            msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the vocabulary of the tokenizer for the target model ({self.model_config.model_path})"
             raise ValueError(msg)
 
         # Compare Tokenizer Configuration
-        if draft_tokenizer.__dict__ == target_tokenizer.__dict__:
-            msg = f"tokenizer for draft_model ({self.draft_model}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
+        if draft_tokenizer.__dict__ != target_tokenizer.__dict__:
+            msg = f"tokenizer for draft_model ({self.draft_model_config.model_path}) does not match the configuration of the tokenizer for the target model ({self.model_config.model_path})"
             raise ValueError(msg)
 
         if self.enable_echo:
             msg = "enable_echo not currently supported with speculative decoding enabled"
             raise ValueError(msg)
 
-        if self._sampling_config.enable_structured_output:
+        if self.sampling_config.enable_structured_output:
             msg = "structured outputs not currently supported with speculative decoding enabled"
             raise ValueError(msg)
 
@@ -313,8 +334,7 @@ class PipelineConfig(MAXConfig):
         reason."""
         # Retrieve the architecture
         arch = PIPELINE_REGISTRY.retrieve_architecture(
-            model_path=self.model_config.model_path,
-            trust_remote_code=self.model_config.trust_remote_code,
+            huggingface_repo=self.model_config.huggingface_model_repo,
         )
 
         # If nothing is provided, we should not update any more params.
@@ -370,7 +390,9 @@ class PipelineConfig(MAXConfig):
             self.rope_type = arch.rope_type
 
         devices = load_devices(self.model_config.device_specs)
-        PIPELINE_REGISTRY._estimate_memory_footprint(self, arch, devices)
+        MEMORY_ESTIMATOR.estimate_memory_footprint(
+            self, arch.pipeline_model, devices
+        )
 
         # If we pass validation ensure and the engine is not set, just set it
         # to MAX.
@@ -426,6 +448,10 @@ class PipelineConfig(MAXConfig):
     @property
     def model_config(self) -> MAXModelConfig:
         return self._model_config
+
+    @property
+    def draft_model_config(self) -> Optional[MAXModelConfig]:
+        return self._draft_model_config
 
     @property
     def sampling_config(self) -> SamplingConfig:
