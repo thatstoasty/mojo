@@ -233,7 +233,7 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     var i = fspath.rfind(os.sep) + 1
     var head = fspath[:i]
     if head and head != os.sep * len(head):
-        return String(head.rstrip(String(os.sep)))
+        return String(head.rstrip(os.sep))
     return head
 
 
@@ -414,7 +414,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     var i = fspath.rfind(os.sep) + 1
     var head = fspath[i:]
     if head and head != os.sep * len(head):
-        return String(head.rstrip(String(os.sep)))
+        return String(head.rstrip(os.sep))
     return head
 
 
@@ -596,7 +596,7 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     while j < len(bytes):
         if bytes[j] == ord("$") and j + 1 < len(bytes):
             if not buf:
-                buf._buffer.reserve(new_capacity=2 * len(bytes))
+                buf.reserve(new_capacity=2 * len(bytes))
             buf.write_bytes(bytes[i:j])
 
             name, length = _parse_variable_name(bytes[j + 1 :])
