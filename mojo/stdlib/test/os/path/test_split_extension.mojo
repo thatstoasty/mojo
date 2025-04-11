@@ -13,8 +13,7 @@
 # RUN: %mojo %s
 
 import os
-from os.path import splitext
-from os.path.path import _split_extension
+from os.path.path import split_extension, _split_extension
 from testing import assert_equal
 
 
@@ -37,43 +36,43 @@ def test_windows_path():
     assert_equal(extension, ".txt")
 
 
-def _splitext_test(
+def _split_extension_test(
     path: String, expected_head: String, expected_extension: String
 ):
-    head, extension = splitext(path)
+    head, extension = split_extension(path)
     assert_equal(head, expected_head)
     assert_equal(extension, expected_extension)
 
 
 def test_absolute_file_path():
-    _splitext_test("/usr/lib/file.txt", "/usr/lib/file", ".txt")
-    _splitext_test("//usr/lib/file.txt", "//usr/lib/file", ".txt")
-    _splitext_test("///usr/lib/file.txt", "///usr/lib/file", ".txt")
+    _split_extension_test("/usr/lib/file.txt", "/usr/lib/file", ".txt")
+    _split_extension_test("//usr/lib/file.txt", "//usr/lib/file", ".txt")
+    _split_extension_test("///usr/lib/file.txt", "///usr/lib/file", ".txt")
 
 
 def test_relative_file_path():
-    _splitext_test("usr/lib/file.txt", "usr/lib/file", ".txt")
-    _splitext_test("./file.txt", "./file", ".txt")
-    _splitext_test(".././.././file.txt", ".././.././file", ".txt")
+    _split_extension_test("usr/lib/file.txt", "usr/lib/file", ".txt")
+    _split_extension_test("./file.txt", "./file", ".txt")
+    _split_extension_test(".././.././file.txt", ".././.././file", ".txt")
 
 
 def test_relative_directories():
-    _splitext_test("", "", "")
-    _splitext_test(".", ".", "")
-    _splitext_test("..", "..", "")
-    _splitext_test("........", "........", "")
-    _splitext_test("usr/lib", "usr/lib", "")
+    _split_extension_test("", "", "")
+    _split_extension_test(".", ".", "")
+    _split_extension_test("..", "..", "")
+    _split_extension_test("........", "........", "")
+    _split_extension_test("usr/lib", "usr/lib", "")
 
 
 def test_file_names():
-    _splitext_test("foo.bar", "foo", ".bar")
-    _splitext_test("foo.boo.bar", "foo.boo", ".bar")
-    _splitext_test("foo.boo.biff.bar", "foo.boo.biff", ".bar")
-    _splitext_test(".csh.rc", ".csh", ".rc")
-    _splitext_test("nodots", "nodots", "")
-    _splitext_test(".cshrc", ".cshrc", "")
-    _splitext_test("...manydots", "...manydots", "")
-    _splitext_test("...manydots.ext", "...manydots", ".ext")
+    _split_extension_test("foo.bar", "foo", ".bar")
+    _split_extension_test("foo.boo.bar", "foo.boo", ".bar")
+    _split_extension_test("foo.boo.biff.bar", "foo.boo.biff", ".bar")
+    _split_extension_test(".csh.rc", ".csh", ".rc")
+    _split_extension_test("nodots", "nodots", "")
+    _split_extension_test(".cshrc", ".cshrc", "")
+    _split_extension_test("...manydots", "...manydots", "")
+    _split_extension_test("...manydots.ext", "...manydots", ".ext")
 
 
 def main():

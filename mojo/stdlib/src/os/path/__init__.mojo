@@ -27,5 +27,5 @@ from .path import (
     lexists,
     split,
     splitroot,
-    splitext,
+    split_extension,
 )

@@ -421,7 +421,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
 #     return join(path.__fspath__(), *paths_str)
 
 # ===----------------------------------------------------------------------=== #
-# splitext
+# split_extension
 # ===----------------------------------------------------------------------=== #
 
 
@@ -461,7 +461,7 @@ fn _split_extension(
     return String(path), String("")
 
 
-fn splitext[
+fn split_extension[
     PathLike: os.PathLike, //
 ](path: PathLike) raises -> Tuple[String, String]:
     """Splits `path` into the root and extension.
