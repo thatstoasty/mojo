@@ -768,7 +768,7 @@ fn tensor_core_matrix_multiplication[
 
 
 @compiler.register("matrix_multiplication")
-struct MatrixMultiplication[algorithm: StringLiteral]:
+struct MatrixMultiplication[algorithm: StaticString]:
     """
     The central custom operation that dispatches to multiple different
     matrix multiplication implementations, depending on target hardware and
@@ -778,7 +778,7 @@ struct MatrixMultiplication[algorithm: StringLiteral]:
     @staticmethod
     fn execute[
         # The kind of device this will be run on: "cpu" or "gpu"
-        target: StringLiteral,
+        target: StaticString,
     ](
         out: OutputTensor[rank=2],
         a: InputTensor[type = out.type, rank = out.rank],

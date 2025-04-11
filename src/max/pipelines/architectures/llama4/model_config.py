@@ -19,13 +19,11 @@ from typing import Any, Callable, Literal
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue
 from max.graph.weights import WeightData, weights_format
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
 from max.pipelines.config import PipelineConfig
-from max.pipelines.kv_cache import KVCacheParams
-from max.pipelines.max_config import (
-    KVCacheConfig,
-    MAXModelConfig,
-    MAXModelConfigBase,
-)
+from max.pipelines.max_config import KVCacheConfig
+from max.pipelines.model_config import MAXModelConfig, MAXModelConfigBase
 from transformers import AutoConfig
 
 
@@ -86,8 +84,9 @@ class Llama4ConfigBase(MAXModelConfigBase):
     attention_chunk_size: int
     """Chunk size for attention computation."""
 
-    attn_temperature_tuning: int
-    """Temperature tuning factor for attention in NoRoPE layers."""
+    attn_temperature_tuning: bool
+    """Whether to enable infernece-time temperature tuning attention in NoRoPE
+    layers. This is useful for very long contexts."""
 
     floor_scale: int
     """Scaling factor used in attention temperature tuning calculation."""
@@ -104,8 +103,8 @@ class Llama4ConfigBase(MAXModelConfigBase):
     vocab_size: int
     """Size of the vocabulary."""
 
-    return_n_logits: int
-    """Number of logits to return when running the model."""
+    return_logits: ReturnLogits
+    """Whether to return the last token, all logits, or a variable number of logits."""
 
     max_seq_len: int
     """Maximum length of sequence."""
@@ -214,7 +213,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
         logits_postprocessor: Callable[[TensorValue], TensorValue] | None,
         cache_dtype: DType,
         kv_cache_config: KVCacheConfig,
-        return_n_logits: int,
+        return_logits: ReturnLogits,
         norm_method: Literal["rms_norm"] = "rms_norm",
         attention_bias: bool = False,  # Llama4 attention bias is False in HF.
     ) -> Llama4Config:
@@ -233,7 +232,7 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             logits_postprocessor: An optional callable to post-process model logits (:obj:`max.graph.TensorValue`).
             cache_dtype: The data type for the KV cache (:obj:`max.dtype.DType`).
             kv_cache_config: Configuration settings for the KV cache (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            return_n_logits: The number of top logits to return during inference.
+            return_logits: Whether to return the last token, all tokens or a variable number of logits.
             norm_method: The normalization method to use (currently only "rms_norm").
             attention_bias: Whether to include bias in attention projections. Defaults
               to `False` based on Llama 4 HuggingFace implementation.
@@ -284,18 +283,18 @@ class Llama4Config(MAXModelConfig, Llama4ConfigBase):
             ),
             attention_chunk_size=text_config.attention_chunk_size,
             attn_temperature_tuning=getattr(
-                text_config, "attn_temperature_tuning", 4
+                text_config, "attn_temperature_tuning", True
             ),
             floor_scale=getattr(text_config, "floor_scale", 8192),
             attn_scale=getattr(text_config, "attn_scale", 0.1),
             rms_norm_eps=text_config.rms_norm_eps,
             tie_word_embeddings=tie_word_embeddings,
             vocab_size=text_config.vocab_size,
-            return_n_logits=return_n_logits,
+            return_logits=return_logits,
             max_seq_len=Llama4Config.calculate_max_seq_len(
                 pipeline_config, huggingface_config
             ),
-            num_hidden_layers=1,  # text_config.num_hidden_layers,
+            num_hidden_layers=text_config.num_hidden_layers,
             kv_params=Llama4Config.get_kv_params(
                 huggingface_config=huggingface_config,
                 n_devices=n_devices,
