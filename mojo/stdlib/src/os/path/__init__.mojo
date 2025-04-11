@@ -23,7 +23,7 @@ from .path import (
     isdir,
     isfile,
     islink,
-    isabs,
+    is_absolute,
     join,
     lexists,
     split,

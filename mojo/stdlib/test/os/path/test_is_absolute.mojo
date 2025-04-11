@@ -13,14 +13,14 @@
 # RUN: %mojo %s
 
 import os
-from os.path import isabs
+from os.path import is_absolute
 from testing import assert_true, assert_false
 
 
 def main():
-    assert_true(isabs("/"))
-    assert_true(isabs("/foo"))
-    assert_true(isabs("/foo/bar"))
+    assert_true(is_absolute("/"))
+    assert_true(is_absolute("/foo"))
+    assert_true(is_absolute("/foo/bar"))
 
-    assert_false(isabs(""))
-    assert_false(isabs("foo/bar"))
+    assert_false(is_absolute(""))
+    assert_false(is_absolute("foo/bar"))

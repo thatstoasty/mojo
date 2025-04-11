@@ -308,11 +308,11 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 
 
 # ===----------------------------------------------------------------------=== #
-# isabs
+# is_absolute
 # ===----------------------------------------------------------------------=== #
 
 
-fn isabs[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if `path` is an absolute path name.
     On Unix, that means it begins with a slash.
 
