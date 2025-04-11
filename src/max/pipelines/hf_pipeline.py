@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Optional, cast
 import numpy as np
 import torch
 from max.driver import Tensor
+from max.nn.kv_cache import ContinuousHFStaticCache
 from transformers import (
     AutoConfig,
     AutoModel,
@@ -41,7 +42,6 @@ from .core import (
     TextResponse,
     TokenGenerator,
 )
-from .kv_cache import ContinuousHFStaticCache
 
 logger = logging.getLogger("max.pipelines")
 
@@ -61,7 +61,7 @@ class HFTextGenerationPipeline(TokenGenerator[TextContext]):
         self._huggingface_config = AutoConfig.from_pretrained(
             pipeline_config.model_config.model_path,
             trust_remote_code=pipeline_config.model_config.trust_remote_code,
-            revision=pipeline_config.model_config.huggingface_revision,
+            revision=pipeline_config.model_config.huggingface_model_revision,
         )
 
         self._model = AutoModelForCausalLM.from_pretrained(

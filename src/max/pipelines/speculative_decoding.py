@@ -23,12 +23,10 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from transformers import AutoConfig
+from max.nn import ReturnLogits
 
-from .config_enums import RepoType
 from .core import InputContext, TextGenerationResponse, TokenGenerator
 from .hf_utils import download_weight_files
-from .max_config import HuggingFaceRepo
 from .pipeline import PipelineModel
 
 T = TypeVar("T", bound=InputContext)
@@ -51,22 +49,18 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             self.pipeline_config.model_config.device_specs
         )
         target_session = InferenceSession(devices=target_devices)
-        target_config = AutoConfig.from_pretrained(
-            self.pipeline_config.model_config.model_path,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
-            revision=self.pipeline_config.model_config.huggingface_revision,
+        target_config = self.pipeline_config.model_config.huggingface_config
+
+        target_hf_repo = (
+            self.pipeline_config.model_config.huggingface_weights_repo
         )
-        target_repo_id = (
-            self.pipeline_config.model_config._weights_repo_id
-            if self.pipeline_config.model_config._weights_repo_id
-            else self.pipeline_config.model_config.model_path
-        )
+
         weight_paths = download_weight_files(
-            huggingface_model_id=target_repo_id,
+            huggingface_model_id=target_hf_repo.repo_id,
             filenames=[
                 str(x) for x in self.pipeline_config.model_config.weight_path
             ],
-            revision=self.pipeline_config.model_config.huggingface_revision,
+            revision=self.pipeline_config.model_config.huggingface_weight_revision,
             max_workers=8,
         )
         target_weights = load_weights(weight_paths)
@@ -86,7 +80,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
             weights=target_weights,
             adapter=weight_adapters.get(_target_weights_format, None),
-            return_n_logits=self.pipeline_config.max_num_steps,
+            return_logits=ReturnLogits.VARIABLE,
         )
 
         # Load draft model
@@ -94,24 +88,18 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
         draft_devices = load_devices(scan_available_devices()[:1])
         draft_session = InferenceSession(devices=draft_devices)
 
-        # TODO: Allow user to set trust_remote_code and revision for draft_model
-        draft_config = AutoConfig.from_pretrained(
-            self.pipeline_config.draft_model,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
-            revision=None,
+        draft_config = (
+            self.pipeline_config.draft_model_config.huggingface_config
         )
 
         # Retrieve Encoding, and Files for Draft Model
-        if not self.pipeline_config.draft_model:
+        if self.pipeline_config.draft_model_config is None:
             raise ValueError(
                 "draft_model must be provided for speculative decoding"
             )
 
-        draft_hf_repo = HuggingFaceRepo(
-            repo_id=self.pipeline_config.draft_model,
-            revision=self.pipeline_config.model_config.huggingface_revision,
-            trust_remote_code=self.pipeline_config.model_config.trust_remote_code,
-            repo_type=RepoType.online,
+        draft_hf_repo = (
+            self.pipeline_config.draft_model_config.huggingface_weights_repo
         )
         encodings = draft_hf_repo.supported_encodings
         if not encodings:
@@ -134,7 +122,7 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
 
         _draft_weights_format = list(weight_files.keys())[0]
         _draft_weight_paths = download_weight_files(
-            huggingface_model_id=self.pipeline_config.draft_model,
+            huggingface_model_id=self.pipeline_config.draft_model_config.model_path,
             filenames=[str(x) for x in weight_files[_draft_weights_format]],
             revision=None,
             max_workers=8,
@@ -147,10 +135,10 @@ class SpeculativeDecodingTextGenerationPipeline(TokenGenerator[T]):
             huggingface_config=draft_config,
             encoding=encodings[0],
             devices=draft_devices,
-            kv_cache_config=self.pipeline_config.model_config.kv_cache_config,
+            kv_cache_config=self.pipeline_config.draft_model_config.kv_cache_config,
             weights=draft_weights,
             adapter=weight_adapters.get(_draft_weights_format, None),
-            return_n_logits=1,
+            return_logits=ReturnLogits.LAST_TOKEN,
         )
 
         # Check that the max length for both models are the same

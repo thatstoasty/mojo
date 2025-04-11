@@ -27,6 +27,8 @@ from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
+from max.nn import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -38,7 +40,6 @@ from max.pipelines import (
 )
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
-from max.pipelines.kv_cache import KVCacheInputs, KVCacheParams
 from transformers import AutoConfig
 
 from .graph import build_graph
@@ -82,7 +83,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = -1,
+        return_logits: ReturnLogits = ReturnLogits.ALL,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -93,7 +94,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.model = self.load_model(session)
 

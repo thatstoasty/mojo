@@ -10,24 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
-"""Llama4 normalization."""
-
 from __future__ import annotations
 
-from max.dtype import DType
-from max.graph import TensorType, TensorValue, ops
+from .block_utils import BlockCopyOp, BlockCopyType
+from .paged_cache import (
+    FetchPagedKVCacheCollection,
+    FetchPagedKVCacheCollectionFA3Fallback,
+    PagedKVCacheCollection,
+    PagedKVCacheCollectionFA3Fallback,
+    PagedKVCacheManager,
+    PagedKVCacheManagerFA3Fallback,
+    PagedKVCacheType,
+)
 
-
-def l2_norm(x: TensorValue, eps=1e-6) -> TensorValue:
-    """Computes the L2 norm of the input."""
-    weight = ops.constant(1, DType.float32).broadcast_to([x.shape[-1]])
-    if x.device:
-        weight = weight.to(x.device)
-    original_dtype = x.dtype
-    x = x.cast(DType.float32)
-    return ops.custom(
-        "rms_norm",
-        [x, weight, ops.constant(eps, x.dtype)],
-        [TensorType(dtype=DType.float32, shape=x.shape, device=x.device)],
-    )[0].tensor.cast(original_dtype)
+__all__ = [
+    "BlockCopyOp",
+    "BlockCopyType",
+    "FetchPagedKVCacheCollection",
+    "FetchPagedKVCacheCollectionFA3Fallback",
+    "PagedKVCacheManager",
+    "PagedKVCacheManagerFA3Fallback",
+    "PagedKVCacheCollection",
+    "PagedKVCacheCollectionFA3Fallback",
+    "PagedKVCacheType",
+]

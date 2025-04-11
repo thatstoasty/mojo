@@ -24,7 +24,14 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn import Module, Signals
+from max.nn import Module, ReturnLogits, Signals
+from max.nn.kv_cache import (
+    KVCacheInputs,
+    KVCacheManager,
+    KVCacheParams,
+    estimate_kv_cache_size,
+    load_kv_manager,
+)
 from max.pipelines import (
     KVCacheConfig,
     ModelInputs,
@@ -35,13 +42,6 @@ from max.pipelines import (
 )
 from max.pipelines.core import LogProbabilities, TextContext
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
-from max.pipelines.kv_cache import (
-    KVCacheInputs,
-    KVCacheManager,
-    KVCacheParams,
-    estimate_kv_cache_size,
-    load_kv_manager,
-)
 from max.pipelines.log_probabilities import compute_log_probabilities
 from transformers import AutoConfig
 
@@ -132,7 +132,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         """
         Args:
@@ -148,7 +148,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
         self.model = self.load_model(session)
 
@@ -472,7 +472,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             attention_bias=self.attention_bias,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
-            return_n_logits=self.return_n_logits,
+            return_logits=self.return_logits,
         )
         nn_model: Module
         if len(self.devices) > 1:
@@ -602,7 +602,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             norm_method=self.norm_method,
             cache_dtype=self.encoding.cache_dtype,
             kv_cache_config=self.kv_cache_config,
-            return_n_logits=self.return_n_logits,
+            return_logits=self.return_logits,
         )
         nn_model = NaiveLlama3(model_config)
 
@@ -762,7 +762,7 @@ class Llama3Model(LlamaModelBase):
         kv_cache_config: KVCacheConfig,
         weights: Weights,
         adapter: Optional[WeightsAdapter] = None,
-        return_n_logits: int = 1,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
     ) -> None:
         super().__init__(
             pipeline_config,
@@ -773,5 +773,5 @@ class Llama3Model(LlamaModelBase):
             kv_cache_config,
             weights,
             adapter,
-            return_n_logits,
+            return_logits,
         )
